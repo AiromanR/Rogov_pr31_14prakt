@@ -23,34 +23,47 @@ struct ClubState {
 };
 
 ClubState clubstate;
-//HANDLE Semaphores = NULL;
 bool allDone = false;
 
 DWORD WINAPI ClientThread(LPVOID id) {
     int ID = (int)id;
-    clubstate.clients[ID].arriveTick = GetTickCount64();
+    clubstate.clients[ID].arriveTick = GetTickCount();
 
-    //DWORD waitResult = WaitForSingleObject(Semaphores, 3000);
-    //if (waitResult == WAIT_OBJECT_0) {
-        clubstate.currentVisitors++;
-        clubstate.clients[ID].startTick = GetTickCount64();
+    DWORD startWait = GetTickCount();
+    bool entered = false;
+
+    while (GetTickCount() - startWait < 3000) {
+        if (clubstate.currentVisitors < CLUB_CAPACITY) {
+            clubstate.currentVisitors++;
+            entered = true;
+            break;
+        }
+    }
+
+    if (entered) {
+        clubstate.clients[ID].startTick = GetTickCount();
+
+        if (clubstate.currentVisitors > clubstate.maxVisitors) {
+            clubstate.maxVisitors = clubstate.currentVisitors;
+        }
+
         Sleep(2000 + (rand() % 3000));
+
         clubstate.currentVisitors--;
-        clubstate.clients[ID].endTick = GetTickCount64();
+        clubstate.clients[ID].endTick = GetTickCount();
         clubstate.clients[ID].served = TRUE;
         clubstate.servedCount++;
-        //ReleaseSemaphore(Semaphores, 1, NULL);
-    //}
-    //else {
-    //    clubstate.clients[ID].endTick = GetTickCount64();
-    //    clubstate.clients[ID].timeout = TRUE;
-    //    clubstate.timeoutCount++;
-    //}
+    }
+    else {
+        clubstate.clients[ID].endTick = GetTickCount();
+        clubstate.clients[ID].timeout = TRUE;
+        clubstate.timeoutCount++;
+    }
+
     return 0;
 }
 
-
-DWORD WINAPI ObserverThread(LPVOID lpParam) {
+DWORD WINAPI ObserverThread(LPVOID) {
     while (!allDone) {
         Sleep(500);
         std::cout << "Занято: " << clubstate.currentVisitors
@@ -70,15 +83,17 @@ DWORD WINAPI ObserverThread(LPVOID lpParam) {
                 totalService += (clubstate.clients[i].endTick - clubstate.clients[i].startTick);
             }
         }
-        std::cout << "Среднее время ожидания: " << (totalWait / clubstate.servedCount) << " мс" << std::endl;
-        std::cout << "Среднее время обслуживания: " << (totalService / clubstate.servedCount) << " мс" << std::endl;
+        std::cout << "Среднее время ожидания: "<< (totalWait / clubstate.servedCount) << " мс" << std::endl;
+        std::cout << "Среднее время обслуживания: "<< (totalService / clubstate.servedCount) << " мс" << std::endl;
     }
+
     std::cout << "\nСписок посетителей, которые не дождались места:\n";
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (clubstate.clients[i].timeout) {
             std::cout << "Поток " << clubstate.clients[i].threadId << std::endl;
         }
     }
+
     return 0;
 }
 
@@ -86,14 +101,12 @@ int main() {
     setlocale(0, "rus");
     srand(time(NULL));
 
-    //if (!(Semaphores = CreateSemaphore(NULL, CLUB_CAPACITY, CLUB_CAPACITY, NULL)))
-    //    return GetLastError();
-
     HANDLE hObserver;
     if (hObserver = CreateThread(NULL, 0, ObserverThread, NULL, 0, NULL)) {
         SetThreadPriority(hObserver, THREAD_PRIORITY_LOWEST);
     }
     else return GetLastError();
+
 
     HANDLE hVisitors[MAX_CLIENTS];
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -110,7 +123,6 @@ int main() {
         }
         else return GetLastError();
     }
-
     std::cout << "Клуб открыт, " << MAX_CLIENTS << " посетителей\n" << std::endl;
 
     WaitForMultipleObjects(MAX_CLIENTS, hVisitors, TRUE, INFINITE);
@@ -119,7 +131,6 @@ int main() {
     WaitForSingleObject(hObserver, INFINITE);
     CloseHandle(hObserver);
     for (int i = 0; i < MAX_CLIENTS; i++) CloseHandle(hVisitors[i]);
-    //CloseHandle(Semaphores);
-
+    
     return 0;
 }
